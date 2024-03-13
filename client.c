@@ -1,24 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <regex.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <signal.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <poll.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
-
-typedef struct{
-    char* username;
-    char* secret;
-    char* display_name;
-    int authorized;
-} userInfo;
+#include "client.h"
 
 int client_socket;
 
@@ -28,7 +8,9 @@ void close_connection(userInfo* user, char* error, int is_error){
 
     printf("Closing the connection\n");
 
-    free(user);
+    free(user->username);
+    free(user->secret);
+    free(user->display_name);
 
     if(close(client_socket) == -1){
         perror("Failed to close the socket");
@@ -39,6 +21,8 @@ void close_connection(userInfo* user, char* error, int is_error){
         perror(error);
         exit(EXIT_FAILURE);
     }
+
+    exit(EXIT_SUCCESS);
 }
 
 void interrupt_connection(int sig){
@@ -138,15 +122,15 @@ int parse_output(char* buffer, userInfo* user, int client_sokcet){
 int create_common_message(char* input, userInfo* user,char* msg, int msg_size){
     regex_t reegex;
 
-    if (regcomp(&reegex, "[ -~]", 0) != 0){
-        close_connection(user, "Failed to compile the reg expression", 1);
-    }
+    regcomp(&reegex, "[ -~]", 0);
 
     int comp1 = regexec(&reegex, input, 0, NULL, 0);
 
     if (strlen(input) > 1400 || comp1 != 0){
-        close_connection(user, "Incorrect format message", 1);
+        printf("Incorrect message content\n");
+        return 1;
     }
+    input[strlen(input) - 1] = '\0';
 
     snprintf(msg, msg_size, "MSG FROM %s IS %s\r\n",user->display_name, input);
 
@@ -160,16 +144,20 @@ int local_rename(char* token, userInfo* user){
 
     char* new_display_name = strtok(NULL, " ");;
 
-    if (regcomp(&reegex, "[!-~]", 0) != 0){
-        close_connection(user, "Failed to compile the reg expression", 1);
-    }
+    regcomp(&reegex, "[!-~]", 0);
 
     int comp1 = regexec(&reegex, new_display_name, 0, NULL, 0);
 
     if (strlen(new_display_name) > 20 || comp1 != 0){
-        close_connection(user, "Incorrect format display-name", 1);
+        printf("Incorrect format display-name\n");
+        return 1;
     }
     new_display_name[strlen(new_display_name) - 1] = '\0';
+
+    if(strtok(NULL, " ") != NULL){
+        printf("Too many arguments for this command\n");
+        return 1;
+    }
 
     strcpy(user->display_name, new_display_name);
 
@@ -183,15 +171,22 @@ int create_join_msg(char* token, userInfo* user,char* msg, int msg_size){
     char* channel = strtok(NULL, " ");;
 
     if (regcomp(&reegex, "[A-z0-9-]", 0) != 0){
-        close_connection(user, "Failed to compile the reg expression", 1);
+        printf("Failed to compile the reg expression\n");
+        return 1;
     }
 
     int comp1 = regexec(&reegex, channel, 0, NULL, 0);
 
     if (strlen(channel) > 20 || comp1 != 0){
-        close_connection(user, "Incorrect format channel", 1);
+        printf("Incorrect format channel\n");
+        return 1;
     }
     channel[strlen(channel) - 1] = '\0';
+
+    if(strtok(NULL, " ") != NULL){
+        close_connection(user, "Incorrect message format", 1);
+        printf("Too many arguments for this command\n");
+    }
 
     snprintf(msg, msg_size, "JOIN %s AS %s\r\n", channel, user->display_name);
 
@@ -206,14 +201,13 @@ int create_auth_msg(char* token, userInfo* user, char* msg, int msg_size){
 
     char* username = strtok(NULL, " ");;
 
-    if (regcomp(&reegex, "[A-z0-9-]", 0) != 0){
-        close_connection(user, "Failed to compile the reg expression", 1);
-    }
+    regcomp(&reegex, "[A-z0-9-]", 0);
 
     int comp1 = regexec(&reegex, username, 0, NULL, 0);
 
     if (strlen(username) > 20 || comp1 != 0){
-        close_connection(user, "Incorrect username format", 1);
+        printf("Incorrect username format\n");
+        return 1;
     }
 
     char* secret = strtok(NULL, " ");
@@ -221,7 +215,8 @@ int create_auth_msg(char* token, userInfo* user, char* msg, int msg_size){
     int comp2 = regexec(&reegex, secret, 0, NULL, 0);
 
     if (strlen(secret) > 120 || comp2 != 0){
-        close_connection(user, "Incorrect secret format", 1);
+        printf("Incorrect secret format\n");
+        return 1;
     }
 
     char* display_name = strtok(NULL, " ");
@@ -229,15 +224,22 @@ int create_auth_msg(char* token, userInfo* user, char* msg, int msg_size){
     int comp3 = regexec(&reegex, display_name, 0, NULL, 0);
 
     if (strlen(display_name) > 128 || comp3 != 0){
-        close_connection(user, "Incorrect display name format", 1);
+        printf("Incorrect display name format\n");
+        return 1;
     }
     display_name[strlen(display_name) - 1] = '\0';
+
+    if(strtok(NULL, " ") != NULL){
+        printf("Too many arguments for this command\n");
+        return 1;
+    }
     
     snprintf(msg, msg_size, "AUTH %s AS %s USING %s\r\n", username, display_name, secret);
 
     strcpy(user->username, username);
     strcpy(user->secret, secret);
     strcpy(user->display_name, display_name);
+
     return 0;
 }
 
@@ -261,7 +263,7 @@ int send_input(char* buffer, int buffer_size, userInfo* user, int client_socket)
 
         case 0:
             if (strcmp(token, "/auth") == 0){
-                create_auth_msg(token, user, buffer, buffer_size);
+                MSGFORMATCHECK(create_auth_msg(token, user, buffer, buffer_size));
                 user->authorized = 1;
             } else {
                 printf("555");
@@ -271,22 +273,29 @@ int send_input(char* buffer, int buffer_size, userInfo* user, int client_socket)
         
         case 1:
             if (strcmp(token, "/auth") == 0) {
-                printf("You are already authorized");
+                printf("You are already authorized\n");
                 return 0;
             } else if (strcmp(token, "/join") == 0) {
-                create_join_msg(token, user, buffer, buffer_size);
+                MSGFORMATCHECK(create_join_msg(token, user, buffer, buffer_size));
+                break;
             } else if (strcmp(token, "/rename") == 0) {
-                local_rename(token, user);
+                MSGFORMATCHECK(local_rename(token, user));
+                break;
             } else if (strcmp(token, "/help") == 0) {
                 printf("555");
-            } if(strncmp(token, "//", 1) == 0) {
+                break;
+            } if(strcmp(token, "//") == 0) {
                 printf("555");
-                perror("Invalid command");
+                perror("Invalid command\n");
+                break;
             } 
             else{
-                create_common_message(input, user, buffer, buffer_size);
+                MSGFORMATCHECK(create_common_message(input, user, buffer, buffer_size));
+                break;
             }
 
+            default:
+                break;
 
     }
 
@@ -318,13 +327,13 @@ int tcp_connection(userInfo* user, struct addrinfo *res){
 
         if (connect(client_socket, res->ai_addr, res->ai_addrlen) == -1) {
             perror("Error connecting to server");
-        exit(EXIT_FAILURE);
+            exit(EXIT_FAILURE);
     }
 
     printf("Connected to server\n");
 
 
-    while(poll(polled_fds, nfds, 10000) > 0) { /* error handling elided */
+    while(poll(polled_fds, nfds, 100000) > 0) { /* error handling elided */
         if(polled_fds[0].revents & POLLIN) {
             // read data from stdin and send it over the socket
             send_input(buffer, sizeof(buffer), user, client_socket);
@@ -483,24 +492,24 @@ int main(int argc, char *argv[]) {
 
     userInfo user;
 
-        user.username = malloc(sizeof(char) * 20);
-        if(user.username == NULL){
-            perror("Failed to allocate memory");
-            exit(EXIT_FAILURE);
-        }
-        user.secret = malloc(sizeof(char) * 120);
-        if(user.secret == NULL){
-            perror("Failed to allocate memory");
-            free(user.username);
-            exit(EXIT_FAILURE);
-        }
-        user.display_name = malloc(sizeof(char) * 128);
-        if(user.display_name == NULL){
-            perror("Failed to allocate memory");
-            free(user.username);
-            free(user.secret);
-            exit(EXIT_FAILURE);
-        }
+    user.username = malloc(sizeof(char) * 20);
+    if(user.username == NULL){
+        perror("Failed to allocate memory");
+        exit(EXIT_FAILURE);
+    }
+    user.secret = malloc(sizeof(char) * 120);
+    if(user.secret == NULL){
+        perror("Failed to allocate memory");
+        free(user.username);
+        exit(EXIT_FAILURE);
+    }
+    user.display_name = malloc(sizeof(char) * 128);
+    if(user.display_name == NULL){
+        perror("Failed to allocate memory");
+        free(user.username);
+        free(user.secret);
+        exit(EXIT_FAILURE);
+    }
     
     //Connect to the server
     if (strcmp(protocol, "tcp") == 0){
