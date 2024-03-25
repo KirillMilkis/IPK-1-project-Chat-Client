@@ -286,11 +286,13 @@ int tcp_connection(userInfo* user, struct addrinfo *res){
 
 
     while(poll(polled_fds, nfds, 100000) > 0) { /* error handling elided */
-        if(polled_fds[0].revents & POLLIN) {
+        if(polled_fds[0].revents & POLLIN && user->response_request == 0) {
             // read data from stdin and send it over the socket
             send_input(buffer, sizeof(buffer), user, client_socket);
+            continue;
             
         }
+
         if(polled_fds[1].revents & POLLIN && user->authorized == 1) {
             // chat data received
             memset(buffer, 0, sizeof(buffer));

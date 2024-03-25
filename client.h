@@ -32,6 +32,7 @@ typedef struct userInfo{
     char* secret;
     char* display_name;
     int authorized;
+    int response_request;
 } userInfo;
 
 void close_connection(userInfo* user, char* error, int is_error);

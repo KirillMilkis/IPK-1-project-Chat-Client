@@ -40,7 +40,7 @@ int udp_create_chat_msg(char* token, char* buffer, userInfo* user, char* msg_pac
 }
 
 
-udp_local_rename(char* token, userInfo* user){
+int udp_local_rename(userInfo* user){
     regex_t reegex;
 
     char* new_display_name = strtok(NULL, " ");;
@@ -106,7 +106,7 @@ int udp_create_join_msg(char* token, char* buffer, userInfo* user, char* msg_pac
 int udp_create_auth_msg(char* token, char* buffer, userInfo* user, char* msg_packet, int* msg_size){
     regex_t reegex;
     *msg_size = 3;
-    msg_packet = malloc(sizeof(char) * *msg_size);
+    msg_packet = realloc(msg_packet, sizeof(char) * *msg_size);
 
     msg_packet[0] = (uint8_t)0x02;
     msg_packet[1] = usp_send_msg_num;
@@ -165,8 +165,6 @@ int udp_create_auth_msg(char* token, char* buffer, userInfo* user, char* msg_pac
     strcpy(user->username, username);
     strcpy(user->secret, secret);
     strcpy(user->display_name, display_name);
-    
-    return msg_packet;
 
     return 0;
 }
@@ -177,8 +175,11 @@ int udp_send_msg(struct addrinfo *res, userInfo* user, char* buffer, int buffer_
     memset(buffer, 0, buffer_size);
     fgets(buffer, buffer_size, stdin);
 
-    int msg_packet_size = 0;
-    char* msg_packet;
+    int msg_packet_size = 1;
+    char* msg_packet = malloc(msg_packet_size);
+    if (msg_packet == NULL){
+        close_connection(user, "Error allocation memory", 1);
+    }
 
     char* token = strtok(buffer, " \t\n");
     switch(user->authorized){
@@ -192,10 +193,10 @@ int udp_send_msg(struct addrinfo *res, userInfo* user, char* buffer, int buffer_
                 printf("You are already authorized\n");
                 return 0;
             } else if(strcmp(token, "/join") == 0){
-                MSGFORMATCHECK(udp_create_list_msg(token, buffer, user, msg_packet, &msg_packet_size));
+                MSGFORMATCHECK(udp_create_join_msg(token, buffer, user, msg_packet, &msg_packet_size));
                 break;
             } else if(strcmp(token, "/rename") == 0){
-                MSGFORMATCHECK(udp_create_leave_msg(token, buffer, user, msg_packet, &msg_packet_size));
+                MSGFORMATCHECK(udp_local_rename(user));
                 break;
             } else if(strcmp(token, "/help") == 0){
                 printf("555");
@@ -220,7 +221,6 @@ int udp_send_msg(struct addrinfo *res, userInfo* user, char* buffer, int buffer_
         
         bytesend = sendto(client_socket, msg_packet, msg_packet_size + 1, 0, res->ai_addr, res->ai_addrlen);
         
-        
         if (bytesend < 0){
             perror("Failed to send the message");
             exit(EXIT_FAILURE);
@@ -233,12 +233,14 @@ int udp_send_msg(struct addrinfo *res, userInfo* user, char* buffer, int buffer_
 int udp_parse_confirm(char* buffer, int buffer_size, userInfo* user){
     uint16_t confirmed_msg_num;
     memcpy(&confirmed_msg_num, &buffer[1], 2); //memcpy
-
+    
     if (confirmed_msg_num == usp_send_msg_num){
         return 0;
     } else {
         close_connection(user, "Failed to confirm the message", 1);
     }
+
+    return 0;
 
 }
 
@@ -255,9 +257,12 @@ int udp_recieve_parser(char* buffer, char* recieved_msg,int buffer_size, userInf
         case 0x03:
             udp_parse_reply(buffer, buffer_size, user);
             break;
+        case 
         default:
             break;
     }
+
+    return 0;
 
 }
 
@@ -280,60 +285,67 @@ int udp_connection(userInfo* user, struct addrinfo *res){
     polled_fds[1].fd = client_socket;
     polled_fds[1].events = POLLIN;
 
-    int ready_sockets = poll(polled_fds, nfds, -1);
-    /* error handling elided */
-    if(polled_fds[0].revents & POLLIN) {
-        udp_send_msg(res, user, buffer, sizeof(buffer), bytesend);
-        
-        for(int retry = 0; retry < RETRY_COUNT; retry++){
-            int ready_confirm = poll(polled_fds, nfds, TIMEOUT);
+
+    while(1){
+        int ready_sockets = poll(polled_fds, nfds, -1);
+        /* error handling elided */
+        if(polled_fds[0].revents & POLLIN) {
+            udp_send_msg(res, user, buffer, sizeof(buffer), bytesend);
             
-            if (ready_confirm != 0 && polled_fds[1].revents & POLLIN){
+            for(int retry = 0; retry < RETRY_COUNT; retry++){
+                int ready_confirm = poll(polled_fds, nfds, TIMEOUT);
                 
-                byterecv = recvfrom(client_socket, buffer, buffer_size, 0, res->ai_addr, &res->ai_addrlen);
-                if (byterecv < 0) {
-                    close_connection(user, "Failed to recieve the message", 1);
+                if (ready_confirm != 0 && polled_fds[1].revents & POLLIN){
+                    
+                    byterecv = recvfrom(client_socket, buffer, buffer_size, 0, res->ai_addr, &res->ai_addrlen);
+                    if (byterecv < 0) {
+                        close_connection(user, "Failed to recieve the message", 1);
+                    }
+
+                    udp_parse_confirm(buffer, buffer_size, user);
+
+                    break;
+                } else if (ready_confirm != 0 && polled_fds[0].revents & POLLIN){
+                    printf("Please wait for the confirmation\n");
+                }  
+                
+                if (retry == RETRY_COUNT - 1){
+                    close_connection(user, "Failed to send the message", 1);
                 }
-
-                udp_parse_confirm(buffer, buffer_size, user);
-
-                break;
-            } else if (ready_confirm != 0 && polled_fds[0].revents & POLLIN){
-                printf("Please wait for the confirmation\n");
-            }  
-            
-            if (retry == RETRY_COUNT - 1){
-                close_connection(user, "Failed to send the message", 1);
             }
+
+
+        } else if(polled_fds[1].revents & POLLIN && user->authorized == 1) {
+            // chat data received
+            memset(buffer, 0, buffer_size);
+
+            byterecv = recvfrom(client_socket, buffer, buffer_size, 0, res->ai_addr, &res->ai_addrlen);
+            if (byterecv < 0) {
+                perror("ERROR: Recvfrom");
+                close(client_socket);
+                return EXIT_FAILURE;
+            }
+
+            char recieved_msg[1024];
+            size_t recieved_msg_size = 1024;
+            memset(recieved_msg, 0, recieved_msg_size);
+            udp_recieve_parser(buffer, recieved_msg, buffer_size,  user);
+
+            printf("Server: %s\n", buffer);
+
+            if (strcmp(buffer, "BYE\r\n") == 0){
+                close_connection(user, "", 0);
+            }
+            
         }
-
-
-    } else if(polled_fds[1].revents & POLLIN && user->authorized == 1) {
-        // chat data received
-        memset(buffer, 0, buffer_size);
-
-        byterecv = recvfrom(client_socket, buffer, buffer_size, 0, res->ai_addr, &res->ai_addrlen);
-        if (byterecv < 0) {
-            perror("ERROR: Recvfrom");
+        if(polled_fds[1].revents & (POLLERR | POLLHUP)) {
             close(client_socket);
-            return EXIT_FAILURE;
+            // socket was closed
         }
 
-        char* recieved_msg[1024];
-        udp_recieve_parser(buffer, recieved_msg, buffer_size,  user);
 
-        printf("Server: %s\n", buffer);
-
-        if (strcmp(buffer, "BYE\r\n") == 0){
-            close_connection(user, "", 0);
-        }
-        
     }
-    if(polled_fds[1].revents & (POLLERR | POLLHUP)) {
-        close(client_socket);
-        // socket was closed
-    }
-
+    
     
     
     return 0;

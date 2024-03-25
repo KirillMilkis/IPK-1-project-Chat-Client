@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
     char *addr = NULL;
     char *protocol = NULL;
 
-    int opt;   
+    int opt; 
     while((opt = getopt(argc, argv, ":t:s:p:")) != -1){
         switch(opt){
             case 't':
