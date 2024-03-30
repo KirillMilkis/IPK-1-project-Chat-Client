@@ -122,9 +122,9 @@ int receive_msg(char* buffer,size_t buffer_size, userInfo* user){
 
 
     if (recv(client_socket, buffer, buffer_size, 0) < 0){
-                perror("Recieve failed");
-                exit(EXIT_FAILURE);
-            }
+            perror("Recieve failed");
+            exit(EXIT_FAILURE);
+        }
 
     char tokenized_buffer[1024];
     memset(tokenized_buffer, 0, sizeof(tokenized_buffer));
@@ -325,19 +325,18 @@ int send_input(char* buffer, int buffer_size, userInfo* user, int client_socket)
                 MSGFORMATCHECK(local_rename(token, user));
                 break;
             } else if (strcmp(token, "/help") == 0) {
-                printf("555");
+                printf("Commands:\n/auth <username> <display-name> <secret> - authenticate with the server\n/join <channel> - join a channel\n/rename <new-display-name> - change your display name\n");
                 break;
             } else if(strcmp(token, "//") == 0) {
-                printf("555");
-                perror("Invalid command\n");
+                printf("invalid command\n");
                 break;
             } else{
                 MSGFORMATCHECK(create_common_message(input, user, buffer, buffer_size));
                 break;
             }
 
-            default:
-                break;
+        default:
+            break;
 
     }
     
@@ -356,7 +355,6 @@ int tcp_connection(userInfo* user, struct addrinfo *res){
     memset(buffer, 0, sizeof(buffer));
 
     int nfds = 2;
-    struct pollfd *polled_fds;
 
     polled_fds = calloc(nfds,sizeof(struct pollfd));
 
@@ -374,15 +372,13 @@ int tcp_connection(userInfo* user, struct addrinfo *res){
     printf("Connected to server\n");
 
 
-    while(poll(polled_fds, nfds, 100000) > 0) { /* error handling elided */
+    while(poll(polled_fds, nfds, 100000) > 0) { 
         if(polled_fds[0].revents & POLLIN && user->reply_request == 0) {
-            // read data from stdin and send it over the socket
             send_input(buffer, sizeof(buffer), user, client_socket);
             
         }
 
         if(polled_fds[1].revents & POLLIN && user->authorized == 1) {
-            // chat data received
             memset(buffer, 0, sizeof(buffer));
 
             receive_msg(buffer, BUFFER_SIZE, user);
@@ -394,7 +390,6 @@ int tcp_connection(userInfo* user, struct addrinfo *res){
         }
         if(polled_fds[1].revents & (POLLERR | POLLHUP)) {
             close(client_socket);
-            // socket was closed
         }
     }
 

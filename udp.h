@@ -15,7 +15,8 @@ typedef struct msgIdStorage{
     uint16_t client_msg_id;
     uint16_t serv_msg_id;
     size_t confirmed_ids_size;
-    uint16_t confirmed_ids[1000];
+    int confirmed_ids_count;
+    uint16_t* confirmed_ids;
 } msgIdStorage;
 
 #endif

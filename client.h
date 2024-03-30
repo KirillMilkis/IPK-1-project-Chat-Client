@@ -18,6 +18,7 @@
 #include "udp.h"
 
 int client_socket;
+struct pollfd *polled_fds;
 
 #define MSGFORMATCHECK(func)  \
     do {                  \

@@ -3,11 +3,17 @@
 
 void close_connection(userInfo* user, char* error, int is_error){ 
 
-    printf("Closing the connection\n");
+    printf("Disconnecting...\n");
 
-    free(user->username);
-    free(user->secret);
-    free(user->display_name);
+    if(user != NULL){
+        free(user->username);
+        free(user->secret);
+        free(user->display_name);
+    } 
+
+    if(polled_fds != NULL){
+        free(polled_fds);
+    }
 
     if(close(client_socket) == -1){
         printf("ERR: Failed to close the socket\n");
@@ -24,19 +30,10 @@ void close_connection(userInfo* user, char* error, int is_error){
 
 void interrupt_connection(int sig){
 
-    printf("Closing the connection\n");
+    printf("Disconnecting...\n");
 
-    if(shutdown(client_socket, SHUT_WR) == -1){
-        printf("ERR: Failed to close the connection\n");
-        exit(EXIT_FAILURE);
-    }
+    close_connection(NULL, "", 0);
 
-    if(close(client_socket) == -1){
-        printf("ERR: Failed to close the socket\n");
-        exit(EXIT_FAILURE);
-    }
-
-    exit(EXIT_SUCCESS);
 }
    
 
