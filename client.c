@@ -10,12 +10,12 @@ void close_connection(userInfo* user, char* error, int is_error){
     free(user->display_name);
 
     if(close(client_socket) == -1){
-        perror("Failed to close the socket");
+        printf("ERR: Failed to close the socket\n");
         exit(EXIT_FAILURE);
     }
 
     if(is_error){
-        perror(error);
+        printf("ERR: %s\n", error);
         exit(EXIT_FAILURE);
     }
 
@@ -27,12 +27,12 @@ void interrupt_connection(int sig){
     printf("Closing the connection\n");
 
     if(shutdown(client_socket, SHUT_WR) == -1){
-        perror("Failed to close the connection");
+        printf("ERR: Failed to close the connection\n");
         exit(EXIT_FAILURE);
     }
 
     if(close(client_socket) == -1){
-        perror("Failed to close the socket");
+        printf("ERR: Failed to close the socket\n");
         exit(EXIT_FAILURE);
     }
 
@@ -48,7 +48,7 @@ int main(int argc, char *argv[]) {
 
     int opt; 
     while((opt = getopt(argc, argv, ":t:s:p:")) != -1){
-        switch(opt){
+       switch(opt){
             case 't':
                 if (strcmp(optarg, "tcp") == 0 || strcmp(optarg, "udp") == 0){
                     protocol = optarg;
@@ -97,14 +97,6 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    client_socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (client_socket == -1) {
-        perror("Error creating socket");
-        exit(EXIT_FAILURE);
-    }
-
-    printf("%d\n", client_socket);
-
     signal(SIGINT, interrupt_connection);
 
     userInfo user;
@@ -130,15 +122,29 @@ int main(int argc, char *argv[]) {
     
     //Connect to the server
     if (strcmp(protocol, "tcp") == 0){
+        
+        client_socket = socket(AF_INET, SOCK_STREAM, 0);
+        if (client_socket == -1) {
+            perror("Error creating socket");
+            exit(EXIT_FAILURE);
+        }
+
         tcp_connection(&user, res);
 
     } else if(strcmp(protocol, "udp") == 0){
+
+        client_socket = socket(AF_INET, SOCK_DGRAM, 0);
+        if (client_socket == -1) {
+            perror("Error creating socket");
+            exit(EXIT_FAILURE);
+        }
+
         udp_connection(&user, res);
     }
     
     close_connection(&user, "", 0);
 
-     freeaddrinfo(res);
+    freeaddrinfo(res);
 
     return 0;
 

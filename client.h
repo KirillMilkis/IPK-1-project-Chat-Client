@@ -26,13 +26,18 @@ int client_socket;
         }                       \
     } while (0)                 \
 
+typedef struct msgPacket msgPacket;
 
 typedef struct userInfo{ 
     char* username;
     char* secret;
     char* display_name;
     int authorized;
-    int response_request;
+    
+    int reply_request;
+    int serv_confirm_request;
+    int client_confirm_request;
+    msgPacket* prev_msg_packet;
 } userInfo;
 
 void close_connection(userInfo* user, char* error, int is_error);

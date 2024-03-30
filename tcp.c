@@ -1,6 +1,7 @@
 #include "tcp.h"
+#define BUFFER_SIZE 1024
 
-int parse_err(char* rec_msg, char* token, userInfo* user){
+int parse_err(char* token, userInfo* user, char* rec_msg, size_t rec_msg_size){
     regex_t reegex;
     token = strtok(NULL, " \t\n");
 
@@ -12,14 +13,14 @@ int parse_err(char* rec_msg, char* token, userInfo* user){
     regcomp(&reegex, "[!-~]", 0);
     int comp1 = regexec(&reegex, token, 0, NULL, 0);
 
-    if(strlen(token) > 20 || comp1 != 0){
-        close_connection(user, "Invalid DisplayName in recieve from Server", 1);
+    if(strlen(token) > 128 || comp1 != 0){
+        close_connection(user, "Invalid Display name in recieve from Server", 1);
     }
     char* rec_disp_name = token;
 
     token = strtok(NULL, " \t\n");
 
-    if(strcmp(token, "IS") == 0){
+    if(strcmp(token, "IS") != 0){
         close_connection(user, "Error recieve from Server", 1);
     }
 
@@ -38,38 +39,124 @@ int parse_err(char* rec_msg, char* token, userInfo* user){
 
 }
 
-/* TODO: Parse_reply*/
 
-/* TODO: Parse_auth*/
+int parse_reply(char* token, userInfo* user, char* rec_msg, size_t rec_msg_size){
+    regex_t reegex;
+    token = strtok(NULL, " \t\n");
 
-/* TODO: Parse_join*/
+    int ok;
+    if (strcmp(token, "OK") == 0){
+        ok = 1;
+    } else if(strcmp(token, "NOK") == 0){
+        ok = 0;
+    } else{
+        close_connection(user, "Error recieve from Server 1", 1);
+    }
 
-/* TODO: Parse_msg*/
+    token = strtok(NULL, " \t\n");
 
-/* TODO: Parse_confirm*/
+    if(strcmp(token, "IS") != 0){
+        close_connection(user, "Error recieve from Server 2", 1);
+    }
 
-int parse_output(char* buffer, userInfo* user, int client_sokcet){
+    token = strtok(NULL, " .\t\n");
+    regcomp(&reegex, "[ -~]", 0);
+    int comp1= regexec(&reegex, token, 0, NULL, 0);
+
+    if(strlen(token) > 1400 || comp1 != 0){
+        close_connection(user, "Invalid Message content From Server", 1);
+    }
+    char* msg_content = token;
+
+    if(strcmp(msg_content, "Authentication successful")){
+        user->authorized = 1;
+    }
+
+    if(ok){
+        snprintf(rec_msg, sizeof(rec_msg), "Success: %s\n", msg_content);
+    } else{
+        snprintf(rec_msg, sizeof(rec_msg), "Failure: %s\n", msg_content);
+    }
+
+    return 0;
+}
+int parse_common_msg(char* token, userInfo* user, char* rec_msg, size_t rec_msg_size){
+    regex_t reegex;
+    token = strtok(NULL, " \t\n");
+
+    if(strcmp(token, "FROM") != 0){
+        close_connection(user, "Error recieve from Server", 1);
+    }
+
+    token = strtok(NULL, " \t\n");
+    regcomp(&reegex, "[!-~]", 0);
+    int comp1 = regexec(&reegex, token, 0, NULL, 0);
+
+    if(strlen(token) > 128 || comp1 != 0){
+        close_connection(user, "Incrorrect display name in recieve from Server", 1);
+    }
+    char* rec_disp_name = token;
+
+    token = strtok(NULL, " \t\n");
+
+    if(strcmp(token, "IS") != 0){
+        close_connection(user, "Error recieve from Server", 1);
+    }
+
+    token = strtok(NULL, " \t\n");
+    regcomp(&reegex, "[ -~]", 0);
+    int comp2 = regexec(&reegex, token, 0, NULL, 0);
+
+    if(strlen(token) > 1400 || comp2 != 0){
+        close_connection(user, "Invalid message content", 1);
+    }
+    char* msg_content = token;
+
+    snprintf(rec_msg, sizeof(rec_msg), "%s: %s\n", rec_disp_name, msg_content);
+
+    return 0;
+}
+
+
+int receive_msg(char* buffer,size_t buffer_size, userInfo* user){
+
+
+    if (recv(client_socket, buffer, buffer_size, 0) < 0){
+                perror("Recieve failed");
+                exit(EXIT_FAILURE);
+            }
 
     char tokenized_buffer[1024];
     memset(tokenized_buffer, 0, sizeof(tokenized_buffer));
     strcpy(tokenized_buffer, buffer);
-    char* token = strtok(buffer, " \t\n");
+    char* token = strtok(tokenized_buffer, " \t\n");
 
-    if(strcmp(token, "ERR") == 0){
-        parse_err(buffer, token, user);
-    } else if(strcmp(token, "REPLY") == 0){
-        printf("%s", buffer);
-    } else if(strcmp(token, "AUTH") == 0){
-        printf("%s", buffer);
-    } else if(strcmp(token, "JOIN") == 0){
-        printf("%s", buffer);
-    } else if(strcmp(token, "MSG") == 0){
-        printf("%s", buffer);
-    } else if(strcmp(token, "BYE") == 0){
-        printf("%s", buffer);
-    } else if(strcmp(token, "CONFIRM") == 0){
-        printf("%s", buffer);
-    } 
+    switch(user->authorized){
+        case 0:
+            if(strcmp(token, "REPLY") == 0){
+                parse_reply(token, user, buffer, BUFFER_SIZE);
+                user->reply_request = 0;
+            }
+            break;
+        case 1:
+            if(strcmp(token, "REPLY") == 0){
+                parse_reply(token, user, buffer, BUFFER_SIZE);
+                user->reply_request = 0;
+            } else if(strcmp(token, "MSG") == 0){
+                parse_common_msg(token, user, buffer, BUFFER_SIZE);
+                printf("%s", buffer);
+            } else if(strcmp(token, "BYE") == 0){
+                close_connection(user, "", 0);
+            } else if(strcmp(token, "AUTH") == 0 || strcmp(token, "JOIN")){
+                ;
+            } else{
+                close_connection(user, "Invalid message from server", 1);
+            }
+            break;
+
+    }
+
+    printf("%s", buffer);
 
     return 0;
 
@@ -84,7 +171,7 @@ int create_common_message(char* input, userInfo* user,char* msg, int msg_size){
     int comp1 = regexec(&reegex, input, 0, NULL, 0);
 
     if (strlen(input) > 1400 || comp1 != 0){
-        printf("Incorrect message content\n");
+        printf("Invalid message content\n");
         return 1;
     }
     input[strlen(input) - 1] = '\0';
@@ -105,7 +192,7 @@ int local_rename(char* token, userInfo* user){
 
     int comp1 = regexec(&reegex, new_display_name, 0, NULL, 0);
 
-    if (strlen(new_display_name) > 20 || comp1 != 0){
+    if (strlen(new_display_name) > 128 || comp1 != 0){
         printf("Incorrect format display-name\n");
         return 1;
     }
@@ -203,22 +290,23 @@ int send_input(char* buffer, int buffer_size, userInfo* user, int client_socket)
     char input[1024];
     memset(input, 0, sizeof(input));
 
-    fgets(input, sizeof(input), stdin);
+    fgets(input, BUFFER_SIZE, stdin);
 
-    char tokenize_input[1024];
-    memset(tokenize_input, 0, sizeof(tokenize_input));
-    strcpy(tokenize_input, input); 
+    char tokenized_buffer[1024];
+    memset(tokenized_buffer, 0, sizeof(tokenized_buffer));
+    strcpy(tokenized_buffer, input); 
 
-    char* token = strtok(tokenize_input, " \t\n");
+    char* token = strtok(tokenized_buffer, " \t\n");
 
     memset(buffer, 0, sizeof(&buffer));
 
     switch(user->authorized){
-
+            
         case 0:
             if (strcmp(token, "/auth") == 0){
                 MSGFORMATCHECK(create_auth_msg(token, user, buffer, buffer_size));
                 user->authorized = 1;
+                user->reply_request = 1;
                 break;
             } else {
                 perror("You are not authorized\n");
@@ -231,6 +319,7 @@ int send_input(char* buffer, int buffer_size, userInfo* user, int client_socket)
                 return 0;
             } else if (strcmp(token, "/join") == 0) {
                 MSGFORMATCHECK(create_join_msg(token, user, buffer, buffer_size));
+                user->reply_request = 1;
                 break;
             } else if (strcmp(token, "/rename") == 0) {
                 MSGFORMATCHECK(local_rename(token, user));
@@ -277,19 +366,18 @@ int tcp_connection(userInfo* user, struct addrinfo *res){
     polled_fds[1].events = POLLIN;
 
 
-        if (connect(client_socket, res->ai_addr, res->ai_addrlen) == -1) {
-            perror("Error connecting to server");
-            exit(EXIT_FAILURE);
+    if (connect(client_socket, res->ai_addr, res->ai_addrlen) == -1) {
+        perror("Error connecting to server");
+        exit(EXIT_FAILURE);
     }
 
     printf("Connected to server\n");
 
 
     while(poll(polled_fds, nfds, 100000) > 0) { /* error handling elided */
-        if(polled_fds[0].revents & POLLIN && user->response_request == 0) {
+        if(polled_fds[0].revents & POLLIN && user->reply_request == 0) {
             // read data from stdin and send it over the socket
             send_input(buffer, sizeof(buffer), user, client_socket);
-            continue;
             
         }
 
@@ -297,12 +385,7 @@ int tcp_connection(userInfo* user, struct addrinfo *res){
             // chat data received
             memset(buffer, 0, sizeof(buffer));
 
-            if (recv(client_socket, buffer, sizeof(buffer), 0) < 0){
-                perror("Recieve failed");
-                exit(EXIT_FAILURE);
-            }
-
-            printf("Server: %s\n", buffer);
+            receive_msg(buffer, BUFFER_SIZE, user);
 
             if (strcmp(buffer, "BYE\r\n") == 0){
                 close_connection(user, "", 0);
