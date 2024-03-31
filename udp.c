@@ -444,7 +444,7 @@ void udp_parse_error(char* buffer, int buffer_size, userInfo* user, int byterecv
     msg_id_storage->serv_msg_id = ((uint16_t)buffer[1] << 8);
     msg_id_storage->serv_msg_id += (uint16_t)buffer[2];
 
-    printf("MSG ID: %u\n", msg_id_storage->serv_msg_id);
+
 
     if(id_check(msg_id_storage) == 1){
         return;
@@ -510,7 +510,7 @@ int udp_receive_msg(char* buffer, int buffer_size, userInfo* user, struct addrin
                 user->client_confirm_request = 1;
 
             } else{  
-                udp_close_connection(user, "Unexpected reply message", 1)
+                udp_close_connection(user, "Unexpected reply message", 1);
             }
             break;
         case 0x03:
