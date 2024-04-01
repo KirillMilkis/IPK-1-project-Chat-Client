@@ -17,8 +17,10 @@
 #include "tcp.h"
 #include "udp.h"
 
-int client_socket;
-struct pollfd *polled_fds;
+extern uint16_t udp_timeout;
+extern uint8_t max_retransmissions;
+extern int client_socket;
+extern struct pollfd *polled_fds;
 
 #define MSGFORMATCHECK(func)  \
     do {                  \
@@ -28,6 +30,7 @@ struct pollfd *polled_fds;
     } while (0)                 \
 
 typedef struct msgPacket msgPacket;
+typedef struct msgIdStorage msgIdStorage;
 
 typedef struct userInfo{ 
     char* username;
@@ -39,10 +42,12 @@ typedef struct userInfo{
     int serv_confirm_request;
     int client_confirm_request;
     msgPacket* prev_msg_packet;
+    msgIdStorage* user_msg_id_storage;
 } userInfo;
 
-void close_connection(userInfo* user, char* error, int is_error);
 
+void interrupt_connection(int sig);
+void close_connection(userInfo* user, char* error, int is_error);
 
 
 #endif

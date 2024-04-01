@@ -3,15 +3,37 @@
 #include <arpa/inet.h>
 #include <sys/time.h>
 
-#define RETRY_COUNT 3 
-#define TIMEOUT 250
 #define BUFFER_SIZE 1024
 #define CONFIRMED_IDS_SIZE 1000
 
-#define LOCAL 5
-#define SERVER 6
+#define NOT_TO_SEND 5
+#define TO_SEND 6
 
+struct addrinfo *udp_res;
 regex_t reegex;
+
+
+
+void udp_close_connection(userInfo* user, char* error, int is_error){
+    if(user->authorized){
+        msgPacket msg_packet;
+        udp_create_bye_msg(user, &msg_packet, user->user_msg_id_storage->client_msg_id);
+        udp_send_msg(&msg_packet, user, udp_res);
+    }
+    if(user->prev_msg_packet != NULL){
+        free(user->prev_msg_packet->msg);
+    }
+    if(user->user_msg_id_storage->confirmed_ids != NULL){
+        free(user->user_msg_id_storage->confirmed_ids);
+    }
+    close_connection(user, error, is_error);
+    
+}
+
+void udp_interrupt_connection(int sig){
+    udp_close_connection(NULL, "", 0);
+}
+
 
 
 void add_field_msg(msgPacket* msg_packet, char* field){
@@ -22,12 +44,29 @@ void add_field_msg(msgPacket* msg_packet, char* field){
 
 }
 
+void udp_create_bye_msg(userInfo* user, msgPacket* msg_packet, uint16_t msg_id){
+    msg_packet->msgSize = 3;
+    msg_packet->msg = malloc(sizeof(char) * msg_packet->msgSize);
+    if (msg_packet->msg == NULL){
+        free(msg_packet->msg);
+        udp_close_connection(user, "Error allocation memory", 1);
+    }    
+
+    msg_packet->msg[0] = (uint8_t)0xFF;
+    msg_packet->msg[1] = (msg_id >> 8) & 0xFF; 
+    msg_packet->msg[2] = msg_id & 0xFF; 
+
+    printf("Created bye msg\n");
+
+    return;
+}
 
 int udp_create_chat_msg(char* token, char* buffer, userInfo* user, msgPacket* msg_packet, uint16_t msg_id){
 
     msg_packet->msgSize = 3;
     msg_packet->msg = malloc(sizeof(char) * msg_packet->msgSize);
     if (msg_packet->msg == NULL){
+        free(msg_packet->msg);
         udp_close_connection(user, "Error allocation memory", 1);
     }    
 
@@ -63,14 +102,14 @@ int udp_local_rename(userInfo* user){
     int comp1 = regexec(&reegex, new_display_name, 0, NULL, 0);
 
     if (strlen(new_display_name) > 20 || comp1 != 0){
-        printf("Incorrect format display-name\n");
+        printf("ERR: Incorrect format display-name\n");
         return 1;
     }
 
     new_display_name[strlen(new_display_name) - 1] = '\0';
 
     if(strtok(NULL, " ") != NULL){
-        printf("Too many arguments for this command\n");
+        printf("ERR: Too many arguments for this command\n");
         return 1;
     }
 
@@ -86,6 +125,7 @@ int udp_create_join_msg(char* token, char* buffer, userInfo* user, msgPacket* ms
     msg_packet->msgSize = 3;
     msg_packet->msg = malloc(sizeof(char) * msg_packet->msgSize);
     if (msg_packet->msg == NULL){
+        free(msg_packet->msg);
         udp_close_connection(user, "Error allocation memory", 1);
     }    
 
@@ -101,13 +141,13 @@ int udp_create_join_msg(char* token, char* buffer, userInfo* user, msgPacket* ms
 
     if (strlen(channel) > 20 || comp1 != 0){
         free(msg_packet->msg);
-        printf("Incorrect channel format\n");
+        printf("ERR: Incorrect channel format\n");
         return 1;
     }
 
     if(strtok(NULL, " ") != NULL){
         free(msg_packet->msg);
-        printf("Too many arguments for this command\n");
+        printf("ERR: Too many arguments for this command\n");
         return 1;
     }
 
@@ -123,10 +163,9 @@ int udp_create_auth_msg(char* token, char* buffer, userInfo* user, msgPacket* ms
     msg_packet->msgSize = 3;
     msg_packet->msg = malloc(sizeof(char) * msg_packet->msgSize);
     if (msg_packet->msg == NULL){
+        free(msg_packet->msg);
         udp_close_connection(user, "Error allocation memory", 1);
     }    
-
-    msg_id = 0;
 
     msg_packet->msg[0] = (uint8_t)0x02;
     msg_packet->msg[1] = (msg_id >> 8) & 0xFF; 
@@ -140,7 +179,7 @@ int udp_create_auth_msg(char* token, char* buffer, userInfo* user, msgPacket* ms
 
     if (strlen(username) > 20 || comp1 != 0){
         free(msg_packet->msg);
-        printf("Incorrect username format\n");
+        printf("ERR: Incorrect username format\n");
         return 1;
     }
 
@@ -148,9 +187,9 @@ int udp_create_auth_msg(char* token, char* buffer, userInfo* user, msgPacket* ms
 
     int comp2 = regexec(&reegex, secret, 0, NULL, 0);
 
-    if (strlen(secret) > 120 || comp2 != 0){
+    if (strlen(secret) > 128 || comp2 != 0){
         free(msg_packet->msg);
-        printf("Incorrect secret format\n");
+        printf("ERR: Incorrect secret format\n");
         return 1;
     }
 
@@ -158,16 +197,16 @@ int udp_create_auth_msg(char* token, char* buffer, userInfo* user, msgPacket* ms
 
     int comp3 = regexec(&reegex, display_name, 0, NULL, 0);
 
-    if (strlen(display_name) > 128 || comp3 != 0){
+    if (strlen(display_name) > 20 || comp3 != 0){
         free(msg_packet->msg);
-        printf("Incorrect display name format\n");
+        printf("ERR: Incorrect display name format\n");
         return 1;
     }
     display_name[strlen(display_name)] = '\0';
 
     if(strtok(NULL, " ") != NULL){
         free(msg_packet->msg);
-        printf("Too many arguments for this command\n");
+        printf("ERR: Too many arguments for this command\n");
         return 1;
     }
 
@@ -187,6 +226,7 @@ void udp_create_confirm(uint16_t msg_id, msgPacket* msg_packet, userInfo* user){
     msg_packet->msgSize = 3;
     msg_packet->msg = malloc(sizeof(char) * msg_packet->msgSize);
     if (msg_packet->msg == NULL){
+        free(msg_packet->msg);
         udp_close_connection(user, "Error allocation memory", 1);
     }
 
@@ -213,8 +253,6 @@ int udp_format_msg(struct addrinfo *res, userInfo* user, msgPacket* msg_packet, 
     strcpy(tokenized_buffer, buffer); 
     char* token = strtok(tokenized_buffer, " \t\n");
 
-    printf("User auth: %d\n", user->authorized);
-
     switch(user->authorized){
         case 0:
             if(strcmp(token, "/auth") == 0){
@@ -234,15 +272,14 @@ int udp_format_msg(struct addrinfo *res, userInfo* user, msgPacket* msg_packet, 
                 break;
             } else if(strcmp(token, "/rename") == 0){
                 MSGFORMATCHECK(udp_local_rename(user));
-                return LOCAL;
+                return NOT_TO_SEND;
             } else if(strcmp(token, "/help") == 0){
                 printf("Commands:\n/auth <username> <display-name> <secret> - authenticate with the server\n/join <channel> - join a channel\n/rename <new-display-name> - change your display name\n");
-                return LOCAL;
-            } else if(strcmp(token, "//") == 0){
+                return NOT_TO_SEND;
+            } else if(strncmp(token, "/", 1) == 0){
                 printf("invalid command\n");
-                return LOCAL;
+                return NOT_TO_SEND;
             } else{
-                printf("MSG FORM CLIENT\n");
                 MSGFORMATCHECK(udp_create_chat_msg(token, buffer, user, msg_packet, client_msg_id));
                 user->serv_confirm_request = 1;
                 break;
@@ -255,7 +292,7 @@ int udp_format_msg(struct addrinfo *res, userInfo* user, msgPacket* msg_packet, 
 
         user->prev_msg_packet = msg_packet;
 
-        return SERVER;
+        return TO_SEND;
     }
 
 int was_id_previously(msgIdStorage* msg_id_storage) {
@@ -296,14 +333,16 @@ int id_check(msgIdStorage* msg_id_storage) {
 }
 
 void udp_parse_reply(char* buffer, int buffer_size, userInfo* user, int byterecv, msgIdStorage* msg_id_storage){
+
     msg_id_storage->serv_msg_id = ((uint16_t)buffer[1] << 8);
     msg_id_storage->serv_msg_id += (uint16_t)buffer[2];
 
-    printf("MSG ID: %u\n", msg_id_storage->serv_msg_id);
-
-    if (id_check(msg_id_storage) == 1){
+    int id_check_result = id_check(msg_id_storage);
+    if (id_check_result == 1){
         printf("Reply already confirmed\n");
         return;
+    } else if(id_check_result == -1){
+        udp_close_connection(user, "Allocation error", 1);
     }
     
     uint8_t result = (uint8_t)buffer[3];
@@ -315,19 +354,28 @@ void udp_parse_reply(char* buffer, int buffer_size, userInfo* user, int byterecv
         udp_close_connection(user, "Unexpected msg confirm", 1);
     }  
 
-    char messageContent[byterecv - 6];
-    strncpy(messageContent, buffer + 6, byterecv - 6);
-    messageContent[byterecv - 6] = '\0';
+    char msg_content[byterecv - 6];
+    strncpy(msg_content, buffer + 6, byterecv - 6);
+    msg_content[byterecv - 6] = '\0';
 
-    if(strcmp(messageContent, "Authentication successful.") == 0){
+    regcomp(&reegex, "[ -~]", 0);
+    int comp1 = regexec(&reegex, msg_content, 0, NULL, 0);
+    if (strlen(msg_content) > 1400 || comp1 != 0){
+        udp_close_connection(user, "Incorrect message format", 1);
+    }
+
+
+    if(strcmp(msg_content, "Authentication successful.") == 0){
         user->authorized = 1;
     } 
 
     if(result){
-        printf("Success: %s\n", messageContent);
+        printf("Success: %s\n", msg_content);
     } else{
-        printf("Failure: %s\n", messageContent);
+        printf("Failure: %s\n", msg_content);
     }
+
+    return;
     
 }
 
@@ -340,6 +388,8 @@ void udp_parse_confirm(char* buffer, int buffer_size, userInfo* user, msgIdStora
          udp_close_connection(user, "Failed to confirm the message", 1);
     } 
 
+    return;
+
 }
 
 void udp_parse_msg(char* buffer, int buffer_size, userInfo* user, int byterecv, msgIdStorage* msg_id_storage){
@@ -347,10 +397,11 @@ void udp_parse_msg(char* buffer, int buffer_size, userInfo* user, int byterecv, 
     msg_id_storage->serv_msg_id = ((uint16_t)buffer[1] << 8);
     msg_id_storage->serv_msg_id += (uint16_t)buffer[2];
 
-    printf("MSG ID: %u\n", msg_id_storage->serv_msg_id);
-
-    if (id_check(msg_id_storage) == 1){
+    int id_check_result = id_check(msg_id_storage);
+    if (id_check_result == 1){
        return;
+    } else if(id_check_result == -1){
+        udp_close_connection(user, "Allocation error", 1);
     }
 
     int field_length = 0;
@@ -364,6 +415,12 @@ void udp_parse_msg(char* buffer, int buffer_size, userInfo* user, int byterecv, 
     strncpy(display_name, &buffer[3], field_length);
     display_name[field_length] = '\0'; 
 
+    regcomp(&reegex, "[A-z0-9-]", 0);
+    int comp1 = regexec(&reegex, display_name, 0, NULL, 0);
+    if (strlen(display_name) > 20 || comp1 != 0){
+        close_connection(user, "Incorrect display name format from Server", 1);
+    }
+
     index++;
 
     field_length = 0;
@@ -376,6 +433,13 @@ void udp_parse_msg(char* buffer, int buffer_size, userInfo* user, int byterecv, 
     strncpy(msg_content, &buffer[index - field_length], field_length);
     msg_content[field_length] = '\0'; 
 
+    regcomp(&reegex, "[ -~]", 0);
+    int comp2 = regexec(&reegex, msg_content, 0, NULL, 0);
+    if (strlen(msg_content) > 1400 || comp2 != 0){
+        udp_close_connection(user, "Incorrect message format from Server", 1);
+    }
+
+
     if ((byterecv - (index + 1)) > 0){
         udp_close_connection(user, "Unexpected msg format", 1);
     }
@@ -383,60 +447,29 @@ void udp_parse_msg(char* buffer, int buffer_size, userInfo* user, int byterecv, 
 
     printf("%s: %s\n", display_name, msg_content);
 
-}
+    return;
 
-void udp_parse_join(char* buffer, int buffer_size, userInfo* user, int byterecv, msgIdStorage* msg_id_storage){
-    
-    msg_id_storage->serv_msg_id = ((uint16_t)buffer[1] << 8);
-    msg_id_storage->serv_msg_id += (uint16_t)buffer[2];
-
-    printf("MSG ID: %u\n", msg_id_storage->serv_msg_id);
-
-    if (id_check(msg_id_storage) == 1){
-       return;
-    }
-
-    int index = 3;
-    int field_length = 0;
-    while (buffer[index] != '\0'){
-        field_length++;
-        index++;
-    }
-    char channel_id[field_length];
-    strncpy(channel_id, &buffer[3], field_length);
-    channel_id[field_length] = '\0';
-
-    index++;
-    field_length = 0;
-    while(buffer[index] != '\0'){
-        field_length++;
-        index++;
-    }
-    char display_name[field_length + 1];
-    strncpy(display_name, &buffer[index - field_length], field_length);
-    display_name[field_length] = '\0';
-
-    if ((byterecv - (index + 1)) > 0){
-        udp_close_connection(user, "Unexpected join msg format", 1);
-    }
-
-
-    printf("Server: %s has joined %s\n", display_name, channel_id);
 }
 
 void udp_parse_bye(char* buffer, int buffer_size, userInfo* user, int byterecv, msgIdStorage* msg_id_storage){
+
     msg_id_storage->serv_msg_id = ((uint16_t)buffer[1] << 8);
     msg_id_storage->serv_msg_id += (uint16_t)buffer[2];
 
-    if (id_check(msg_id_storage) == 1){
+    int id_check_result = id_check(msg_id_storage);
+    if (id_check_result == 1){
        return;
+    } else if(id_check_result == -1){
+        udp_close_connection(user, "Allocation error", 1);
     }
 
     if(byterecv > 3){
         udp_close_connection(user, "Unexpected bye msg format", 1);
     }
 
-    printf("Server has disconnected\n");
+    return;
+
+    
 }
 
 void udp_parse_error(char* buffer, int buffer_size, userInfo* user, int byterecv, msgIdStorage* msg_id_storage){
@@ -445,9 +478,11 @@ void udp_parse_error(char* buffer, int buffer_size, userInfo* user, int byterecv
     msg_id_storage->serv_msg_id += (uint16_t)buffer[2];
 
 
-
-    if(id_check(msg_id_storage) == 1){
+    int id_check_result = id_check(msg_id_storage);
+    if(id_check_result == 1){
         return;
+    } else if(id_check_result == -1){
+        udp_close_connection(user, "Allocation error", 1);
     }
 
     int index = 3;
@@ -459,7 +494,13 @@ void udp_parse_error(char* buffer, int buffer_size, userInfo* user, int byterecv
 
     char display_name[field_length + 1]; 
     memcpy(display_name, &buffer[3], field_length);
-    display_name[field_length] = '\0'; 
+    display_name[field_length] = '\0';
+
+    regcomp(&reegex, "[A-z0-9-]", 0);
+    int comp1 = regexec(&reegex, display_name, 0, NULL, 0);
+    if (strlen(display_name) > 20 || comp1 != 0){
+        close_connection(user, "Incorrect display name format from Server", 1);
+    } 
 
     index++;
 
@@ -473,16 +514,24 @@ void udp_parse_error(char* buffer, int buffer_size, userInfo* user, int byterecv
     memcpy(msg_content, &buffer[index - field_length], field_length);
     msg_content[field_length] = '\0';
 
+    regcomp(&reegex, "[ -~]", 0);
+    int comp2 = regexec(&reegex, msg_content, 0, NULL, 0);
+    if (strlen(msg_content) > 1400 || comp2 != 0){
+        udp_close_connection(user, "Incorrect message format from Server", 1);
+    }
+
     if ((byterecv - (index + 1)) > 0)
     {
         udp_close_connection(user, "Unexpected error msg format", 1);
     }
     
     printf("ERR FROM %s: %s\n", display_name, msg_content);
+
+    return;
 }
 
 
-int udp_receive_msg(char* buffer, int buffer_size, userInfo* user, struct addrinfo* res, msgIdStorage* msg_id_storage){
+void udp_receive_msg(char* buffer, int buffer_size, userInfo* user, struct addrinfo* res, msgIdStorage* msg_id_storage){
 
     int byterecv;
     byterecv = recvfrom(client_socket, buffer, BUFFER_SIZE, 0, res->ai_addr, &res->ai_addrlen);
@@ -491,8 +540,6 @@ int udp_receive_msg(char* buffer, int buffer_size, userInfo* user, struct addrin
     }
 
     uint8_t msg_type = (uint8_t)buffer[0];
-
-    printf("MSG TYPE: %d\n", msg_type);
 
     switch(msg_type){
         case 0x00:
@@ -513,10 +560,6 @@ int udp_receive_msg(char* buffer, int buffer_size, userInfo* user, struct addrin
                 udp_close_connection(user, "Unexpected reply message", 1);
             }
             break;
-        case 0x03:
-            udp_parse_join(buffer, buffer_size, user, byterecv, msg_id_storage);
-            user->client_confirm_request = 1;
-            break;
         case 0x04:
             udp_parse_msg(buffer, buffer_size, user, byterecv, msg_id_storage);
             user->client_confirm_request = 1;
@@ -527,26 +570,33 @@ int udp_receive_msg(char* buffer, int buffer_size, userInfo* user, struct addrin
             break;
         case 0xFF:
             udp_parse_bye(buffer, buffer_size, user, byterecv, msg_id_storage);
-            user->client_confirm_request = 1;
-            break;
+            msgPacket msg_packet;
+            udp_create_confirm(msg_id_storage->serv_msg_id, &msg_packet, user);
+            udp_send_msg(&msg_packet, user, res);
+            udp_close_connection(user, "", 0);
         default:
             break;
 
-
     }  
-    return 0; 
+    return; 
 }
 
 
 int udp_connection(userInfo* user, struct addrinfo *res){
+
     char buffer[1024];
     int buffer_size = sizeof(buffer);
     memset(buffer, 0, buffer_size);
+
+    udp_res = res;
 
     int bytesend;
     int byterecv;
 
     struct msgIdStorage msg_id_storage = {.client_msg_id = -1};
+    user->user_msg_id_storage = &msg_id_storage;
+
+    signal(SIGINT, udp_interrupt_connection);
 
     int nfds = 2;
 
@@ -578,7 +628,7 @@ int udp_connection(userInfo* user, struct addrinfo *res){
             
             msgPacket msg_packet;
             int format_msg_result = udp_format_msg(res, user, &msg_packet, buffer, bytesend, msg_id_storage.client_msg_id);
-            if(format_msg_result != SERVER){
+            if(format_msg_result != TO_SEND){
                 continue;
             }
             
@@ -600,12 +650,11 @@ int udp_connection(userInfo* user, struct addrinfo *res){
             if (user->client_confirm_request == 1){
                 udp_create_confirm(msg_id_storage.serv_msg_id, &msg_packet, user);
                 udp_send_msg(&msg_packet, user, res);
-            }
+            } 
             
             
         } else if(polled_fds[1].revents & (POLLERR | POLLHUP)) {
             udp_close_connection(user, "Poll error", 1);
-           
         }
 
         if(user->serv_confirm_request == 0 && timer_running == 1){
@@ -620,10 +669,10 @@ int udp_connection(userInfo* user, struct addrinfo *res){
                        (current_time.tv_usec - start_time.tv_usec) / 1000 +
                        ((current_time.tv_usec - start_time.tv_usec) % 1000 >= 500 ? 1 : 0);
         
-            if (elapsed_time_ms > TIMEOUT){
-                printf("Timeout\n");
+            if (elapsed_time_ms > udp_timeout){
+                printf("Send timeout %d\n", retry_num);
                 retry_num++;
-                if (retry_num == RETRY_COUNT){
+                if (retry_num == max_retransmissions){
                     free(user->prev_msg_packet->msg);
                     udp_close_connection(user, "Failed to send the message", 1);
                 } else{

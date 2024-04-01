@@ -19,4 +19,8 @@ typedef struct msgIdStorage{
     uint16_t* confirmed_ids;
 } msgIdStorage;
 
+void udp_create_bye_msg(userInfo* user, msgPacket* msg_packet, uint16_t msg_id);
+void udp_send_msg(msgPacket* msg_packet, userInfo* user, struct addrinfo *res);
+
+
 #endif
