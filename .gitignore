@@ -2,3 +2,5 @@
 client.dSYM
 udp_msg.bin
 a.out
+.DS_tore
+/ipk-1-project/ipk24chat-client.dSYM
