@@ -1,4 +1,5 @@
 <h2 class="code-line" data-line-start=0 data-line-end=1 ><a id="Client_for_a_chat_server_using_IPK24CHAT_protocol_0"></a>Client for a chat server using IPK24-CHAT protocol</h2>
+My Git Repo https://github.com/UglyBeautiful/IPK-1-project.git
 <h3 class="code-line" data-line-start=1 data-line-end=2 ><a id="Description_1"></a>Description</h3>
 <p class="has-line-data" data-line-start="2" data-line-end="3">Project task was to implement a client application in two variants (TCP [RFC9293] and UDP [RFC768]). Client is able to communicate with a remote server using the <code>IPK24-CHAT</code>. Protokol supports only IPv4. Remaining specification and features of the protocol are described in the 1 reference.</p>
 <h3 class="code-line" data-line-start=3 data-line-end=4 ><a id="Usage_3"></a>Usage</h3>
