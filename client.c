@@ -6,6 +6,8 @@ struct pollfd *polled_fds;
 uint16_t udp_timeout = 250;
 uint8_t max_retransmissions = 3;
 
+userInfo* user;
+
 
 void close_connection(userInfo* user, char* error, int is_error){ 
 
@@ -36,7 +38,7 @@ void close_connection(userInfo* user, char* error, int is_error){
 
 void interrupt_connection(int sig){
 
-    close_connection(NULL, "", 0);
+    close_connection(user, "", 0);
 
 }
    
@@ -53,7 +55,6 @@ int main(int argc, char *argv[]) {
             case 't':
                 if (strcmp(optarg, "tcp") == 0 || strcmp(optarg, "udp") == 0){
                     protocol = optarg;
-                    printf("t: %s\n", optarg);
                 } else {
                     printf("Invalid protocol: %s\n", optarg);
                     exit(EXIT_FAILURE);
@@ -61,7 +62,6 @@ int main(int argc, char *argv[]) {
                 break;
             case 's':
                 addr = optarg;
-                printf("s: %s\n", optarg);
                 break;
             case 'p':
                 if (atoi(optarg) != 0){
@@ -70,7 +70,6 @@ int main(int argc, char *argv[]) {
                     printf("Invalid port: %s\n", optarg);
                     exit(EXIT_FAILURE);
                 }
-                printf("p: %s\n", optarg);
                 break;
             case 'd':
                 if (atoi(optarg) != 0){
@@ -111,28 +110,30 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    userInfo user;
-
-    user.username = malloc(sizeof(char) * 20);
-    if(user.username == NULL){
+    user = malloc(sizeof(userInfo));
+    if(user == NULL){
         printf("Failed to allocate memory");
         exit(EXIT_FAILURE);
     }
-    user.secret = malloc(sizeof(char) * 120);
-    if(user.secret == NULL){
+    user->username = malloc(sizeof(char) * 20);
+    if(user->username == NULL){
         printf("Failed to allocate memory");
-        free(user.username);
         exit(EXIT_FAILURE);
     }
-    user.display_name = malloc(sizeof(char) * 128);
-    if(user.display_name == NULL){
+    user->secret = malloc(sizeof(char) * 120);
+    if(user->secret == NULL){
         printf("Failed to allocate memory");
-        free(user.username);
-        free(user.secret);
+        free(user->username);
+        exit(EXIT_FAILURE);
+    }
+    user->display_name = malloc(sizeof(char) * 128);
+    if(user->display_name == NULL){
+        printf("Failed to allocate memory");
+        free(user->username);
+        free(user->secret);
         exit(EXIT_FAILURE);
     }
     
-    //Connect to the server
     if (strcmp(protocol, "tcp") == 0){
         
         client_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -141,7 +142,7 @@ int main(int argc, char *argv[]) {
             exit(EXIT_FAILURE);
         }
 
-        tcp_connection(&user, res);
+        tcp_connection(user, res);
 
     } else if(strcmp(protocol, "udp") == 0){
 
@@ -151,10 +152,10 @@ int main(int argc, char *argv[]) {
             exit(EXIT_FAILURE);
         }
 
-        udp_connection(&user, res);
+        udp_connection(user, res);
     }
     
-    close_connection(&user, "", 0);
+    close_connection(user, "", 0);
 
     freeaddrinfo(res);
 
