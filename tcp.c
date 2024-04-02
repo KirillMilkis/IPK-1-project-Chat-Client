@@ -387,7 +387,7 @@ void tcp_connection(userInfo* user, struct addrinfo *res){
             if (send_res == NOT_TO_SEND){
                 continue;
             }
-            if (send(client_socket, buffer, BUFFER_SIZE, 0) < 0){
+            if (send(client_socket, buffer, strlen(buffer), 0) < 0){
                 close_connection(user, "Failed to send the message", 1);
             }
         }
